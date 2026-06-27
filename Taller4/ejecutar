@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AUTOMATIZADOR SIMPLIFICADO - Taller N.4
+Ejecutar este script cuando todo esté configurado
+"""
+
+import os
+import sys
+import subprocess
+
+def main():
+    print("\n" + "="*60)
+    print("AUTOMATIZADOR DE CONFIGURACIONES DE SEGURIDAD")
+    print("Taller N.4 - Infraestructura y Automatización")
+    print("="*60 + "\n")
+    
+    # Verificar que los archivos existan
+    archivos_requeridos = [
+        'dispositivos.csv',
+        'SecurityC3.txt',
+        'automatizador_seguridad.py'
+    ]
+    
+    print("✓ Verificando archivos requeridos...")
+    for archivo in archivos_requeridos:
+        if not os.path.exists(archivo):
+            print(f"✗ ERROR: No se encontró {archivo}")
+            return False
+    print("✓ Todos los archivos están presentes\n")
+    
+    # Crear directorio de logs
+    os.makedirs('logs', exist_ok=True)
+    print("✓ Directorio de logs listo\n")
+    
+    # Instalar dependencias si es necesario
+    print("✓ Verificando dependencias Python...")
+    try:
+        import paramiko
+        print("✓ paramiko está instalado")
+    except ImportError:
+        print("! Instalando paramiko...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "paramiko"])
+    
+    # Ejecutar el automatizador
+    print("\n" + "="*60)
+    print("INICIANDO AUTOMATIZACIÓN...")
+    print("="*60 + "\n")
+    
+    subprocess.call([sys.executable, 'automatizador_seguridad.py'])
+    
+    print("\n" + "="*60)
+    print("AUTOMATIZACIÓN FINALIZADA")
+    print("Revisa los logs en la carpeta 'logs/' para más detalles")
+    print("="*60 + "\n")
+    
+    return True
+
+if __name__ == "__main__":
+    main()
