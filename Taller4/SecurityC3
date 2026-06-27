@@ -1,0 +1,45 @@
+!===============================================
+! CONFIGURACIONES DE SEGURIDAD BASICAS - C3
+!===============================================
+
+!--- Deshabilitar servicio HTTP inseguro
+no ip http server
+no ip http secure-server
+
+!--- Configurar timeout SSH
+ip ssh time-out 120
+ip ssh authentication-retries 3
+
+!--- Deshabilitar telnet, usar solo SSH
+line vty 0 15
+ transport input ssh
+ exec-timeout 5 0
+
+!--- Configurar contraseña de consola
+line console 0
+ password CONSOLA123
+ login
+ exec-timeout 10 0
+
+!--- Banner de advertencia
+banner motd ^C
+ACCESO RESTRINGIDO - SOLO PERSONAL AUTORIZADO
+Cualquier intento de acceso no autorizado sera procesado conforme a la ley
+^C
+
+!--- Deshabilitar CDP (Cisco Discovery Protocol)
+no cdp run
+
+!--- Configurar NTP
+ntp server 129.6.15.28
+ntp server 129.6.15.29
+
+!--- Habilitar logging
+logging buffered 4096
+logging console critical
+
+!--- Configurar nivel de privilege
+privilege exec level 15 configure terminal
+privilege exec level 15 shutdown
+
+!--- Fin de configuraciones de seguridad
