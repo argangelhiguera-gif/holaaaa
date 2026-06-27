@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+AUTOMATIZADOR DE CONFIGURACIONES DE SEGURIDAD EN REDES
+Taller N.4 - Infraestructura y Automatización de Redes con Python
+Autor: Sistema de Automatización
+Descripción: Script que automatiza el despliegue de configuraciones de seguridad
+             en múltiples dispositivos de red usando SSH
+"""
+
+import paramiko
+import csv
+import time
+import sys
+from datetime import datetime
+import logging
+from pathlib import Path
+
+# ===============================================
+# PASO 1: CONFIGURAR LOGGING
+# ===============================================
+def configurar_logging():
+    """
+    Configura el sistema de logging para registrar todas las acciones
+    """
+    # Crear directorio de logs si no existe
+    log_dir = Path('logs')
+    log_dir.mkdir(exist_ok=True)
+    
+    # Nombre del archivo de log con timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = log_dir / f'automatizacion_{timestamp}.log'
+    
+    # Configurar logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ]
+    )
+    
+    return logging.getLogger(__name__)
+
+# ===============================================
+# PASO 2: LEER ARCHIVO CSV DE DISPOSITIVOS
+# ===============================================
+def leer_dispositivos(ruta_csv):
+    """
+    Lee el archivo CSV con la información de los dispositivos
+    
+    Args:
+        ruta_csv (str): Ruta al archivo CSV
+    
+    Returns:
+        list: Lista de diccionarios con información de cada dispositivo
+    """
+    dispositivos = []
+    
+    try:
+        with open(ruta_csv, 'r', encoding='utf-8') as archivo:
+            lector = csv.DictReader(archivo)
+            
+            for fila in lector:
+                dispositivo = {
+                    'ip': fila['IP'].strip(),
+                    'usuario': fila['USUARIO'].strip(),
+                    'contraseña': fila['CONTRASEÑA'].strip(),
+                    'dispositivo': fila['DISPOSITIVO'].strip(),
+                    'descripcion': fila['DESCRIPCION'].strip()
+                }
+                dispositivos.append(dispositivo)
+        
+        return dispositivos
+    
+    except FileNotFoundError:
+        print(f"ERROR: No se encontró el archivo {ruta_csv}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR al leer el CSV: {e}")
+        sys.exit(1)
+
+# ===============================================
+# PASO 3: LEER ARCHIVO DE CONFIGURACIONES
+# ===============================================
+def leer_configuraciones(ruta_config):
+    """
+    Lee el archivo de configuraciones de seguridad
+    
+    Args:
+        ruta_config (str): Ruta al archivo de configuraciones
+    
+    Returns:
+        str: Contenido del archivo de configuraciones
+    """
+    try:
+        with open(ruta_config, 'r', encoding='utf-8') as archivo:
+            configuraciones = archivo.read()
+        
+        return configuraciones
+    
+    except FileNotFoundError:
+        print(f"ERROR: No se encontró el archivo {ruta_config}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR al leer configuraciones: {e}")
+        sys.exit(1)
+
+# ===============================================
+# PASO 4: CONECTAR A UN DISPOSITIVO POR SSH
+# ===============================================
+def conectar_ssh(ip, usuario, contraseña, timeout=10):
+    """
+    Establece conexión SSH a un dispositivo
+    
+    Args:
+        ip (str): Dirección IP del dispositivo
+        usuario (str): Usuario para SSH
+        contraseña (str): Contraseña del usuario
+        timeout (int): Timeout en segundos
+    
+    Returns:
+        paramiko.SSHClient: Cliente SSH conectado o None si falla
+    """
+    try:
+        cliente = paramiko.SSHClient()
+        
+        # Permitir conexión a hosts desconocidos (para laboratorio)
+        cliente.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        # Conectar al dispositivo
+        cliente.connect(
+            hostname=ip,
+            username=usuario,
+            password=contraseña,
+            timeout=timeout,
+            look_for_keys=False,
+            allow_agent=False
+        )
+        
+        return cliente
+    
+    except paramiko.AuthenticationException:
+        logging.error(f"ERROR de autenticación en {ip} - Usuario: {usuario}")
+        return None
+    except paramiko.SSHException as e:
+        logging.error(f"ERROR de conexión SSH en {ip}: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"ERROR inesperado conectando a {ip}: {e}")
+        return None
+
+# ===============================================
+# PASO 5: ENVIAR COMANDOS DE CONFIGURACIÓN
+# ===============================================
+def enviar_configuraciones(cliente_ssh, comandos, nombre_dispositivo):
+    """
+    Envía los comandos de configuración al dispositivo
+    
+    Args:
+        cliente_ssh (paramiko.SSHClient): Cliente SSH conectado
+        comandos (str): Comandos a ejecutar
+        nombre_dispositivo (str): Nombre del dispositivo (para logs)
+    
+    Returns:
+        tuple: (exitoso, salida, errores)
+    """
+    try:
+        # Abrimos un shell interactivo
+        transport = cliente_ssh.get_transport()
+        canal = transport.open_session()
+        canal.invoke_shell()
+        
+        # Enviar comando para entrar en modo config
+        canal.send("conf t\n")
+        time.sleep(0.5)
+        
+        # Enviar cada línea de configuración
+        for linea in comandos.split('\n'):
+            linea = linea.strip()
+            
+            # Saltar líneas vacías y comentarios
+            if not linea or linea.startswith('!'):
+                continue
+            
+            logging.info(f"[{nombre_dispositivo}] Enviando: {linea}")
+            canal.send(linea + "\n")
+            time.sleep(0.3)
+        
+        # Finalizar configuración
+        canal.send("end\n")
+        time.sleep(0.5)
+        
+        # Guardar configuración
+        logging.info(f"[{nombre_dispositivo}] Guardando configuración...")
+        canal.send("wr\n")
+        time.sleep(1)
+        
+        # Obtener salida
+        salida = canal.recv(4096).decode('utf-8')
+        
+        canal.close()
+        
+        return True, salida, ""
+    
+    except Exception as e:
+        logging.error(f"ERROR enviando configuraciones a {nombre_dispositivo}: {e}")
+        return False, "", str(e)
+
+# ===============================================
+# PASO 6: FUNCIÓN PRINCIPAL DE AUTOMATIZACIÓN
+# ===============================================
+def automatizar_dispositivos(archivo_csv, archivo_config):
+    """
+    Orquesta todo el proceso de automatización
+    
+    Args:
+        archivo_csv (str): Ruta al archivo CSV de dispositivos
+        archivo_config (str): Ruta al archivo de configuraciones
+    """
+    
+    logging.info("="*60)
+    logging.info("INICIANDO AUTOMATIZACIÓN DE CONFIGURACIONES DE SEGURIDAD")
+    logging.info("="*60)
+    
+    # Leer dispositivos y configuraciones
+    dispositivos = leer_dispositivos(archivo_csv)
+    configuraciones = leer_configuraciones(archivo_config)
+    
+    logging.info(f"Se encontraron {len(dispositivos)} dispositivos")
+    logging.info("-"*60)
+    
+    # Estadísticas
+    exitosos = 0
+    fallidos = 0
+    errores = []
+    
+    # Procesar cada dispositivo
+    for dispositivo in dispositivos:
+        ip = dispositivo['ip']
+        usuario = dispositivo['usuario']
+        contraseña = dispositivo['contraseña']
+        nombre = dispositivo['dispositivo']
+        descripcion = dispositivo['descripcion']
+        
+        logging.info(f"\nConectando a {nombre} ({ip}) - {descripcion}")
+        
+        # Conectar
+        cliente = conectar_ssh(ip, usuario, contraseña)
+        
+        if cliente is None:
+            logging.error(f"No se pudo conectar a {nombre}")
+            fallidos += 1
+            errores.append(f"{nombre}: Conexión fallida")
+            continue
+        
+        logging.info(f"Conexión exitosa a {nombre}")
+        
+        # Enviar configuraciones
+        exito, salida, error = enviar_configuraciones(cliente, configuraciones, nombre)
+        
+        if exito:
+            logging.info(f"Configuraciones aplicadas exitosamente en {nombre}")
+            exitosos += 1
+        else:
+            logging.error(f"Error aplicando configuraciones en {nombre}: {error}")
+            fallidos += 1
+            errores.append(f"{nombre}: {error}")
+        
+        # Cerrar conexión
+        cliente.close()
+        logging.info(f"Conexión cerrada en {nombre}")
+        
+        # Pausa entre dispositivos
+        time.sleep(1)
+    
+    # ===============================================
+    # PASO 7: REPORTE FINAL
+    # ===============================================
+    logging.info("\n" + "="*60)
+    logging.info("RESUMEN DE AUTOMATIZACIÓN")
+    logging.info("="*60)
+    logging.info(f"Total de dispositivos: {len(dispositivos)}")
+    logging.info(f"Configuraciones exitosas: {exitosos}")
+    logging.info(f"Configuraciones fallidas: {fallidos}")
+    
+    if errores:
+        logging.info("\nErrores encontrados:")
+        for error in errores:
+            logging.info(f"  - {error}")
+    
+    logging.info("="*60)
+    logging.info("AUTOMATIZACIÓN FINALIZADA")
+    logging.info("="*60)
+    
+    return exitosos, fallidos
+
+# ===============================================
+# PASO 8: PUNTO DE ENTRADA DEL SCRIPT
+# ===============================================
+if __name__ == "__main__":
+    # Configurar logging
+    logger = configurar_logging()
+    
+    logger.info("Script de automatización iniciado")
+    
+    # Rutas de archivos
+    archivo_dispositivos = 'dispositivos.csv'
+    archivo_configuraciones = 'SecurityC3.txt'
+    
+    # Ejecutar automatización
+    exitosos, fallidos = automatizar_dispositivos(
+        archivo_dispositivos,
+        archivo_configuraciones
+    )
+    
+    # Salir con código de estado apropiado
+    sys.exit(0 if fallidos == 0 else 1)
