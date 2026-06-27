@@ -1,0 +1,5 @@
+IP,USUARIO,CONTRASEÑA,DISPOSITIVO,DESCRIPCION
+192.168.10.1,Pablo,Sena123,R1,Router Principal
+192.168.10.2,Petro,Sena1234,R3,Router Secundario
+192.168.10.3,Ivan,Sena12345,SWITCH1,Switch Principal
+
